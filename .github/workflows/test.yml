@@ -9,4 +9,4 @@ jobs:
         with:
           node-version: 22
       - run: node --test test.mjs
-        working-directory: assets/eip-draft_inference_receipts
+        working-directory: assets/erc-8510
