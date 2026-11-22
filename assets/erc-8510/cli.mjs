@@ -1,37 +1,85 @@
-// node cli.mjs verify <receipt.json>            the receipt is well formed and signed by its signer
-// node cli.mjs root <day.jsonl>                 the day list for a day file: count, root, unreadable lines
-// node cli.mjs prove <day.jsonl> <index>        the proof for one receipt, checked against the day root
-// node cli.mjs check <day-list.json>            a served day list: every receipt valid, its count and root right
+// Command line for receipts.mjs; README.md lists the commands and exit codes.
 import { readFileSync } from "node:fs";
 
-import { dayList, dayOf, dayRoot, listProblem, problem, proof, readDay, verifyProof } from "./receipts.mjs";
+import { dayList, listProblem, parseJson, proof, readDay, receiptProblem, recordListProblem, verifyProof } from "./receipts.mjs";
 
-const [command, file, arg] = process.argv.slice(2);
-const read = () => readFileSync(file, "utf8");
-const fail = (message) => {
-  console.error(message);
-  process.exit(1);
+const USAGE = `usage:
+  node cli.mjs verify <receipt.json>
+  node cli.mjs root <day.jsonl> [<day> <signer>]
+  node cli.mjs prove <day.jsonl> <index>
+  node cli.mjs check <day-list.json>
+  node cli.mjs check-proof <receipt.json> <proof.json> <root>
+  node cli.mjs check-record <record.json> <day-list.json>`;
+
+class Usage extends Error {}
+
+function read(file) {
+  try {
+    return readFileSync(file, "utf8");
+  } catch (error) {
+    throw new Error(`cannot read ${file}: ${error.code ?? error.message}`);
+  }
+}
+
+function json(file) {
+  const text = read(file);
+  try {
+    return parseJson(text);
+  } catch (error) {
+    throw new Error(`${file} is not JSON: ${error.message}`);
+  }
+}
+
+const passes = (why) => {
+  if (why) throw new Error(`invalid: ${why}`);
+  return "valid";
 };
 
-if (command === "verify") {
-  const why = problem(JSON.parse(read()));
-  if (why) fail(`invalid: ${why}`);
-  console.log("valid");
-} else if (command === "root" || command === "prove") {
-  const { receipts, unreadable } = readDay(read());
-  if (!receipts.length) fail("no readable receipts");
-  for (const [i, r] of receipts.entries()) if (problem(r)) fail(`receipt ${i}: ${problem(r)}`);
-  if (command === "root") {
-    const { receipts: _, ...list } = dayList(dayOf(receipts[0]), receipts[0].signer, receipts, unreadable);
-    console.log(JSON.stringify(list, null, 2));
-  } else {
-    const index = Number(arg), path = proof(receipts, index), root = dayRoot(receipts);
-    console.log(JSON.stringify({ index, proof: path, root, valid: verifyProof(receipts[index], path, root) }, null, 2));
-  }
-} else if (command === "check") {
-  const why = listProblem(JSON.parse(read()));
-  if (why) fail(`invalid: ${why}`);
-  console.log("valid");
-} else {
-  fail("usage: node cli.mjs verify <receipt.json> | root <day.jsonl> | prove <day.jsonl> <index> | check <day-list.json>");
+function day(file, date = null, signer = null) {
+  const found = readDay(read(file), date, signer);
+  return dayList(found.day, found.signer, found.receipts, found.unreadable);
+}
+
+const COMMANDS = {
+  verify: { arity: [1], run: ([file]) => passes(receiptProblem(json(file))) },
+  root: {
+    arity: [1, 3],
+    run: ([file, date, signer]) => {
+      const { receipts, ...list } = day(file, date, signer);
+      return JSON.stringify(list, null, 2);
+    },
+  },
+  prove: {
+    arity: [2],
+    run: ([file, index]) => {
+      if (!/^(0|[1-9][0-9]*)$/.test(index)) throw new Usage(`the index must be a whole number without leading zeros\n${USAGE}`);
+      return JSON.stringify(proof(day(file).receipts, Number(index)), null, 2);
+    },
+  },
+  check: { arity: [1], run: ([file]) => passes(listProblem(json(file))) },
+  "check-proof": {
+    arity: [3],
+    run: ([receiptFile, proofFile, root]) => {
+      const value = json(proofFile);
+      const siblings = Array.isArray(value) ? value : value?.proof;
+      return passes(verifyProof(json(receiptFile), siblings, root) ? null : "the root does not cover this receipt with this proof");
+    },
+  },
+  "check-record": {
+    arity: [2],
+    run: ([recordFile, listFile]) => {
+      const list = json(listFile);
+      return passes(listProblem(list) ?? recordListProblem(json(recordFile), list));
+    },
+  },
+};
+
+try {
+  const [command, ...args] = process.argv.slice(2);
+  const entry = COMMANDS[command];
+  if (!entry || !entry.arity.includes(args.length)) throw new Usage(USAGE);
+  console.log(entry.run(args));
+} catch (error) {
+  console.error(error.message);
+  process.exit(error instanceof Usage ? 2 : 1);
 }
