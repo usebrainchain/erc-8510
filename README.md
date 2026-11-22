@@ -22,7 +22,7 @@ the cost of one transaction a day.
 | --- | --- |
 | `ERCS/erc-8510.md` | The ERC text, in the ethereum/ERCs template |
 | `assets/erc-8510/receipts.mjs` | Canonical form, receipt hash, signature check, day lists, day roots, inclusion proofs, day records |
-| `assets/erc-8510/cli.mjs` | Runs them on files |
+| `assets/erc-8510/cli.mjs` | Runs them on files, and finds a day's record on chain (`find-record`) |
 | `assets/erc-8510/vectors.json` | Test vectors from a test key, and one real receipt whose hash matches the root published for its day |
 | `assets/erc-8510/test.mjs` | Offline tests over the vectors |
 
